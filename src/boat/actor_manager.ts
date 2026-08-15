@@ -1,20 +1,18 @@
 import { Group } from "three";
+import { Ocean } from "../ocean";
 import { Actor } from "./actor";
 import { ActorCreator } from "./actor_creator";
 import { TRANSITION_DURATION } from "./config";
 
 export class ActorManager {
-    private _actors: Actor[] = [];
     private _actorCreator = new ActorCreator();
 
-    public constructor(private _actorGroup: Group) { }
+    public constructor(private _actorGroup: Group, private _ocean: Ocean) { }
 
     public async spawn(modelPath: string) {
         const actor = await this._actorCreator.createActor(modelPath);
-        this._actors.push(actor);
-        this._actorGroup.add(actor.points);
+        this._actorGroup.add(actor);
         this._actorGroup.add(actor.rayGroup);
-        this._actorGroup.add(actor.meshes);
         return actor;
     }
 
@@ -22,15 +20,19 @@ export class ActorManager {
         actor.destroy();
 
         setTimeout(() => {
-            this._actors.splice(this._actors.indexOf(actor), 1);
-
+            this._actorGroup.remove(actor);
             this._actorGroup.remove(actor.rayGroup);
-            this._actorGroup.remove(actor.meshes);
-            this._actorGroup.remove(actor.points);
         }, TRANSITION_DURATION);
     }
 
     public update(delta: number, timestamp: number) {
-        this._actors.forEach(actor => actor.update(delta, timestamp));
+        this._actorGroup.children.forEach(actor => {
+            if (!(actor instanceof Actor)) {
+                return;
+            }
+            const { worldPos } = actor;
+            const waveInfo = this._ocean.getWaveInfo(worldPos.x, worldPos.z, this._ocean.time);
+            (actor as Actor).update(delta, timestamp, waveInfo)
+        });
     }
 }

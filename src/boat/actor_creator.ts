@@ -34,7 +34,7 @@ export class ActorCreator {
             const maxSize = Math.max(size.x, size.y, size.z);
             const center = new Vector3();
             box.getCenter(center);
-            const scale = 4 / Math.max(1, maxSize);
+            const scale = 40 / Math.max(1, maxSize);
 
             for (const p of vertices) {
                 p.x = (p.x - center.x) * scale;
@@ -55,12 +55,13 @@ export class ActorCreator {
             const material = new ShaderMaterial({
                 uniforms: {
                     uTexture: { value: this._particleTexture },
-                    uPointSize: { value: 64 * window.devicePixelRatio },
+                    uPointSize: { value: 256 * window.devicePixelRatio },
                     uColor: { value: new Color(0x88aaff) },
-                    uScan: { value: -1.2 },
+                    uScan: { value: 0 },
                     uReveal: { value: 1 },
                     uShow: { value: 1 },
                     uRangeY: { value: 1 },
+                    uBottom: { value: 0 },
                 },
                 vertexShader: /* glsl */ `
             attribute float alpha;
@@ -69,17 +70,19 @@ export class ActorCreator {
             uniform float uScan;
             uniform float uReveal;
             uniform float uShow;
+            uniform float uBottom;
             varying float vScan;
             varying float vAlpha;
 
             void main() {
-                float worldY = clamp((position.y + uRangeY/2.) / uRangeY, 0.0, 1.0);
+                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                float worldY = clamp((worldPosition.y - uBottom) / uRangeY, 0.0, 1.0);
 
-                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                vec4 mvPosition = viewMatrix * worldPosition;
                 gl_PointSize = uPointSize * (1.0 / -mvPosition.z);
                 gl_Position = projectionMatrix * mvPosition;
 
-                float scanGlow = 1.0 - smoothstep(0.0, 0.05, abs(worldY - uScan));
+                float scanGlow = 1.0 - smoothstep(0.0, 0.02, abs(worldY - uScan));
                 float revealAlpha = 1.0 - smoothstep(uReveal, uReveal + 0.075, worldY);
 
                 vScan = scanGlow;
@@ -108,19 +111,6 @@ export class ActorCreator {
             geometry.setAttribute('position', new BufferAttribute(positions, 3));
 
             const points = new Points(geometry, material);
-            points.geometry.computeBoundingBox();
-            const bounds = points.geometry.boundingBox!;
-
-            const rangeScale = 1.1;
-            const rangeY = (bounds.max.y - bounds.min.y) * rangeScale;
-            material.uniforms.uRangeY.value = rangeY;
-
-            meshes.traverse(mesh => {
-                if (mesh instanceof Mesh) {
-                    mesh.material.userData.customUniforms.uRangeY.value = rangeY;
-                }
-            });
-
             actor = new Actor(points, meshes);
             cachedActor.set(url, actor);
         }
@@ -131,10 +121,11 @@ export class ActorCreator {
     private _setupBoatMaterial(material: MeshStandardMaterial) {
         const customUniforms = {
             uColor: { value: new Color(0x88aaff) },
-            uScan: { value: -1.2 },
+            uScan: { value: 0 },
             uReveal: { value: 1 },
             uShow: { value: 1 },
             uRangeY: { value: 1 },
+            uBottom: { value: 0 },
         };
 
         material.userData.customUniforms = customUniforms;
@@ -145,18 +136,19 @@ export class ActorCreator {
             shader.uniforms.uShow = customUniforms.uShow;
             shader.uniforms.uRangeY = customUniforms.uRangeY;
             shader.uniforms.uColor = customUniforms.uColor;
+            shader.uniforms.uBottom = customUniforms.uBottom;
 
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <common>',
         /* glsl */  `#include <common>
-                varying vec3 vWorldPosition;
+                varying vec4 vWorldPosition;
                 `
             );
 
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <project_vertex>',
         /* glsl */  `#include <project_vertex>
-                vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+                vWorldPosition = modelMatrix * vec4(position, 1.0);
             `
             );
 
@@ -167,23 +159,24 @@ export class ActorCreator {
                 uniform float uReveal;
                 uniform float uShow;
                 uniform float uRangeY;
+                uniform float uBottom;
                 uniform vec3 uColor;
-                varying vec3 vWorldPosition;
+                varying vec4 vWorldPosition;
                 `
             );
 
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <opaque_fragment>',
         /* glsl */  `#include <opaque_fragment>
-                float worldY = clamp((vWorldPosition.y + uRangeY/2.) / uRangeY, 0.0, 1.0);
+                float worldY = clamp((vWorldPosition.y - uBottom) / uRangeY, 0.0, 1.0);
                 float scanGlow = 1.0 - smoothstep(0.0, 0.05, abs(worldY - uScan));
                 float revealAlpha = 1.0 - smoothstep(uReveal, uReveal + 0.075, worldY);
                 if (uShow == 0.0) {
                     revealAlpha = 1.0 - revealAlpha;
                 }
                 float finalAlpha = diffuseColor.a * revealAlpha * (1.0 + scanGlow * 1.4);
-                vec3 baseColor = gl_FragColor.rgb;
-                vec3 finalColor = mix(baseColor, uColor, scanGlow * 0.9);
+                // vec3 baseColor = gl_FragColor.rgb;
+                // vec3 finalColor = mix(baseColor, uColor, scanGlow * 0.9);
                 gl_FragColor.a = finalAlpha;
                 `
             );
@@ -195,16 +188,9 @@ export class ActorCreator {
         const { points: pointsTemplate, meshes: meshesTemplate } = actor;
         const points = new Points(pointsTemplate.geometry.clone(), (pointsTemplate.material as ShaderMaterial).clone());
         const meshes = meshesTemplate.clone(true);
-
-        const bounds = points.geometry.boundingBox!;
-        const rangeY = bounds.max.y - bounds.min.y;
-
-        meshes.traverse((child) => {
-            if (child instanceof Mesh) {
-                child.geometry = child.geometry.clone();
-                child.material = this._setupBoatMaterial(child.material.clone());
-                child.material.userData.customUniforms.uRangeY.value = rangeY;
-            }
+        meshes.traverse((mesh) => {
+            if (!(mesh instanceof Mesh)) return;
+            mesh.material = this._setupBoatMaterial(mesh.material.clone());
         });
         return new Actor(points, meshes);
     }
@@ -230,7 +216,7 @@ export class ActorCreator {
         return tex;
     }
 
-    private _sampleTrianglesByArea(gltf: GLTF, targetCount = 15000) {
+    private _sampleTrianglesByArea(gltf: GLTF, targetCount = 45000) {
         const meshes: { child: Mesh, triangles: Triangle[], totalArea: number, vertexCount: number }[] = [];
 
         const group = new Group();
