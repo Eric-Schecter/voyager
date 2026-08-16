@@ -1,6 +1,6 @@
 import { Timer, Group, Matrix4, PMREMGenerator, Vector3, MathUtils } from 'three';
 import { Renderer } from './renderer';
-import { TRANSITION_DURATION, random, ActorManager } from './boat';
+import { random, ActorManager } from './boat';
 import { Ocean } from './ocean';
 import { Atmosphere } from './sky';
 import { TIME_TO_CREATE, TIME_TO_DESTROY } from './boat/config';

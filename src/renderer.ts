@@ -1,5 +1,5 @@
 import {
-    Scene, Color, PerspectiveCamera, WebGLRenderer, AmbientLight, DirectionalLight, Object3D, ReinhardToneMapping, ACESFilmicToneMapping, SRGBColorSpace
+    Scene, PerspectiveCamera, WebGLRenderer, Object3D, ACESFilmicToneMapping
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
